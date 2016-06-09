@@ -776,7 +776,7 @@ ndis_attach(device_t dev)
 		callout_init(&sc->ndis_scan_callout, 1);
 
 		ifp->if_ioctl = ndis_ioctl_80211;
-		ic->ic_ifp = ifp;
+//		ic->ic_ifp = ifp;
 		ic->ic_softc = sc;
 		ic->ic_name = device_get_nameunit(dev);
 		ic->ic_caps =
@@ -964,7 +964,7 @@ got_crypto:
 		if (!ndis_get_int(sc, OID_802_11_POWER_MODE, &arg))
 			ic->ic_caps |= IEEE80211_C_PMGT;
 
-		ieee80211_ifattach(ic, eaddr);
+		ieee80211_ifattach(ic);
 		ic->ic_send_mgmt = ndis_send_mgmt;
 		ic->ic_raw_xmit = ndis_raw_xmit;
 		ic->ic_scan_start = ndis_scan_start;
@@ -1010,7 +1010,7 @@ ndis_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ], int unit,
     const uint8_t bssid[IEEE80211_ADDR_LEN],
     const uint8_t mac[IEEE80211_ADDR_LEN])
 {
-	struct ndis_softc *sc = ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = ic->ic_softc;
 	struct ndis_vap *nvp;
 	struct ieee80211vap *vap;
 
@@ -1025,7 +1025,7 @@ ndis_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ], int unit,
 	if (nvp == NULL)
 		return (NULL);
 	vap = &nvp->vap;
-	ieee80211_vap_setup(ic, vap, name, unit, opmode, flags, bssid, mac);
+	ieee80211_vap_setup(ic, vap, name, unit, opmode, flags, bssid);
 
 	/* Override with driver methods */
 	nvp->newstate = vap->iv_newstate;
@@ -1033,7 +1033,7 @@ ndis_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ], int unit,
 	vap->iv_reset = ndis_reset_vap;
 
 	/* Complete setup */
-	ieee80211_vap_attach(vap, ieee80211_media_change, ndis_media_status);
+	ieee80211_vap_attach(vap, ieee80211_media_change, ndis_media_status, mac);
 	ic->ic_opmode = opmode;
 
 	/* Install key handing routines */
@@ -1046,7 +1046,7 @@ static void
 ndis_vap_delete(struct ieee80211vap *vap)
 {
 	struct ndis_vap *nvp = NDIS_VAP(vap);
-	struct ndis_softc *sc = vap->iv_ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = vap->iv_ic->ic_softc; 
 
 	ndis_stop(sc);
 	ieee80211_vap_detach(vap);
@@ -1997,7 +1997,7 @@ static void
 ndis_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
 	struct ieee80211vap *vap = ifp->if_softc;
-	struct ndis_softc *sc = vap->iv_ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = vap->iv_ic->ic_softc;
 	uint32_t txrate;
 
 	KASSERT(NDIS_INITIALIZED(sc), ("not initialized"));
@@ -2231,7 +2231,7 @@ fail:
 static int
 ndis_reset_vap(struct ieee80211vap *vap, u_long cmd)
 {
-	struct ndis_softc *sc = vap->iv_ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = vap->iv_ic->ic_softc;
 
 	switch (cmd) {
 	case IEEE80211_IOC_TXPOWER:
@@ -2410,9 +2410,6 @@ ndis_ioctl_80211(struct ifnet *ifp, u_long command, caddr_t data)
 		NDIS_EVTINC(sc->ndis_evtcidx);
 		NDIS_UNLOCK(sc);
 		break;
-	case SIOCGIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &ic->ic_media, command);
-		break;
 	case SIOCGIFADDR:
 		error = ether_ioctl(ifp, command, data);
 		break;
@@ -2426,7 +2423,7 @@ ndis_ioctl_80211(struct ifnet *ifp, u_long command, caddr_t data)
 static int
 ndis_key_delete(struct ieee80211vap *vap, const struct ieee80211_key *key)
 {
-	struct ndis_softc *sc = vap->iv_ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = vap->iv_ic->ic_softc;
 
 	if (key->wk_cipher->ic_cipher == IEEE80211_CIPHER_WEP) {
 		uint32_t idx = key->wk_keyix;
@@ -2452,7 +2449,7 @@ static int
 ndis_key_set(struct ieee80211vap *vap, const struct ieee80211_key *key,
     const uint8_t mac[IEEE80211_ADDR_LEN])
 {
-	struct ifnet *ifp = vap->iv_ic->ic_ifp;
+	struct ifnet *ifp = vap->iv_ic->ic_softc;
 	struct ndis_softc *sc = ifp->if_softc;
 	struct ndis_80211_wep *wep;
 	struct ndis_80211_key *nkey;
@@ -2571,7 +2568,7 @@ ndis_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 {
 	struct ndis_vap *nvp = NDIS_VAP(vap);
 	struct ieee80211com *ic = vap->iv_ic;
-	struct ndis_softc *sc = ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = ic->ic_softc;
 
 	IEEE80211_UNLOCK(ic);
 	switch (nstate) {
@@ -2627,7 +2624,7 @@ ndis_scan(void *arg)
 static void
 ndis_scan_start(struct ieee80211com *ic)
 {
-	struct ndis_softc *sc = ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = ic->ic_softc;
 	struct ieee80211vap *vap;
 
 	vap = TAILQ_FIRST(&ic->ic_vaps);
@@ -2638,7 +2635,7 @@ ndis_scan_start(struct ieee80211com *ic)
 static void
 ndis_set_channel(struct ieee80211com *ic)
 {
-	struct ndis_softc *sc = ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = ic->ic_softc;
 	struct ndis_80211_config *config;
 
 	if (ic->ic_bsschan == IEEE80211_CHAN_ANYC ||
@@ -2683,7 +2680,7 @@ ndis_scan_mindwell(struct ieee80211_scan_state *ss)
 static void
 ndis_scan_end(struct ieee80211com *ic)
 {
-	struct ndis_softc *sc = ic->ic_ifp->if_softc;
+	struct ndis_softc *sc = ic->ic_softc;
 	struct ieee80211vap *vap;
 	struct ieee80211_scanparams sp;
 	struct ieee80211_frame wh;
